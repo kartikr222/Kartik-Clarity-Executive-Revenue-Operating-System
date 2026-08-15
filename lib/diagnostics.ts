@@ -9,13 +9,15 @@ export type DiagnosticInput = {
   industry?: string;
 };
 
+export type DriverImpact = 'low' | 'medium' | 'high';
+
 export type DiagnosticResult = {
   score: number;
   severity: 'low' | 'moderate' | 'high' | 'critical';
   estimatedMonthlyLeakage: number;
   estimatedAnnualLeakage: number;
   primaryBottleneck: string;
-  drivers: { metric: string; value: number; impact: 'low' | 'medium' | 'high' }[];
+  drivers: { metric: string; value: number; impact: DriverImpact }[];
   recommendations: string[];
 };
 
@@ -42,15 +44,20 @@ export function diagnose(input: DiagnosticInput): DiagnosticResult {
   const estimatedMonthlyLeakage = Math.round(monthlyRevenue * leakageRate);
   const estimatedAnnualLeakage = estimatedMonthlyLeakage * 12;
 
-  const candidates = [
-    { metric: 'Monthly churn', value: churn, impact: churnRisk >= 60 ? 'high' : churnRisk >= 30 ? 'medium' : 'low' as const, bottleneck: 'Retention / churn leakage' },
-    { metric: 'Sales cycle', value: cycle, impact: cycleRisk >= 60 ? 'high' : cycleRisk >= 30 ? 'medium' : 'low' as const, bottleneck: 'Sales-cycle friction' },
-    { metric: 'LTV:CAC efficiency', value: cac > 0 ? ltv / cac : 0, impact: efficiencyRisk >= 60 ? 'high' : efficiencyRisk >= 30 ? 'medium' : 'low' as const, bottleneck: 'Acquisition economics' },
-    { metric: 'Expense / annual revenue', value: revenue > 0 ? (expenses * 12) / revenue : 0, impact: expenseRisk >= 60 ? 'high' : expenseRisk >= 30 ? 'medium' : 'low' as const, bottleneck: 'Operating efficiency' },
+  const candidates: Array<{
+    metric: string;
+    value: number;
+    impact: DriverImpact;
+    bottleneck: string;
+  }> = [
+    { metric: 'Monthly churn', value: churn, impact: churnRisk >= 60 ? 'high' : churnRisk >= 30 ? 'medium' : 'low', bottleneck: 'Retention / churn leakage' },
+    { metric: 'Sales cycle', value: cycle, impact: cycleRisk >= 60 ? 'high' : cycleRisk >= 30 ? 'medium' : 'low', bottleneck: 'Sales-cycle friction' },
+    { metric: 'LTV:CAC efficiency', value: cac > 0 ? ltv / cac : 0, impact: efficiencyRisk >= 60 ? 'high' : efficiencyRisk >= 30 ? 'medium' : 'low', bottleneck: 'Acquisition economics' },
+    { metric: 'Expense / annual revenue', value: revenue > 0 ? (expenses * 12) / revenue : 0, impact: expenseRisk >= 60 ? 'high' : expenseRisk >= 30 ? 'medium' : 'low', bottleneck: 'Operating efficiency' },
   ];
 
   const primary = [...candidates].sort((a, b) => {
-    const rank = (x: string) => x === 'high' ? 3 : x === 'medium' ? 2 : 1;
+    const rank = (x: DriverImpact) => x === 'high' ? 3 : x === 'medium' ? 2 : 1;
     return rank(b.impact) - rank(a.impact);
   })[0];
 
