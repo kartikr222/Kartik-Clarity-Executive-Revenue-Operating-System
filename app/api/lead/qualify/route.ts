@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAdminSupabase } from '@/lib/supabase/admin';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 
@@ -15,6 +16,14 @@ type Lead = {
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function POST(request: Request) {
+  const rate = checkRateLimit(`lead-qualify:${getClientIp(request)}`, { limit: 10, windowMs: 60_000 });
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { error: 'Too many lead submissions. Please try again later.' },
+      { status: 429, headers: { 'Retry-After': String(rate.retryAfterSeconds) } },
+    );
+  }
+
   try {
     const body = await request.json() as Lead;
     const workEmail = typeof body.workEmail === 'string' ? body.workEmail.trim().toLowerCase() : '';
@@ -43,17 +52,21 @@ export async function POST(request: Request) {
     };
 
     const supabase = getAdminSupabase();
-    let persisted = false;
-    if (supabase) {
-      const { error } = await supabase.from('qualified_leads').insert(record);
-      persisted = !error;
+    if (!supabase) {
+      return NextResponse.json({ error: 'Lead persistence is temporarily unavailable.' }, { status: 503 });
+    }
+
+    const { error } = await supabase.from('qualified_leads').insert(record);
+    if (error) {
+      console.error('qualified_leads insert failed', { code: error.code, message: error.message });
+      return NextResponse.json({ error: 'Lead persistence failed. Please try again later.' }, { status: 503 });
     }
 
     return NextResponse.json({
       ok: true,
       lead: { ...record, createdAt: new Date().toISOString() },
-      persisted,
-      persistenceMessage: persisted ? 'Lead persisted.' : 'Lead qualified; persistence is not currently available.',
+      persisted: true,
+      persistenceMessage: 'Lead persisted.',
     });
   } catch {
     return NextResponse.json({ error: 'Invalid JSON request.' }, { status: 400 });
