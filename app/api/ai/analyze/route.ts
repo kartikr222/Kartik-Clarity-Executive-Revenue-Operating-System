@@ -1,11 +1,20 @@
 import { NextResponse } from 'next/server';
 import { diagnose, type DiagnosticInput } from '@/lib/diagnostics';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 
 const required = ['annualRevenue', 'monthlyExpenses', 'cac', 'ltv', 'monthlyChurnRate', 'averageDealSize', 'salesCycleDays'] as const;
 
 export async function POST(request: Request) {
+  const rate = checkRateLimit(`ai-analyze:${getClientIp(request)}`, { limit: 20, windowMs: 60_000 });
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { error: 'Too many diagnostic requests. Please try again later.' },
+      { status: 429, headers: { 'Retry-After': String(rate.retryAfterSeconds) } },
+    );
+  }
+
   try {
     const body = await request.json() as Partial<DiagnosticInput>;
     const invalid = required.find((key) => typeof body[key] !== 'number' || !Number.isFinite(body[key] as number) || (body[key] as number) < 0);
